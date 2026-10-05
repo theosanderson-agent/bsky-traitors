@@ -62,6 +62,7 @@ h1 em { color: var(--brass); }
 .tab { background: none; border: 0; padding: 0 0 2px; cursor: pointer; font: 1.15rem var(--font-display); color: var(--muted); border-bottom: 2px solid transparent; }
 .tab.small { font: 1rem var(--font-sc); letter-spacing: .04em; }
 .tab small { font: .7rem var(--font-mono); }
+.tab:disabled { opacity: .45; cursor: not-allowed; }
 .tab[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--brass); }
 .eps { display: flex; gap: 6px; min-width: 0; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
 .ep {
@@ -233,14 +234,15 @@ for (const s of SERIES) for (const [date, label] of s.eps) {
     aired: night.getTime() <= Date.now(),
   });
 }
-const latestAired = () => EPISODES.filter(e => e.aired).sort((a, b) => b.night - a.night)[0];
+const firstEp = (show, series) => EPISODES.find(e => e.show === show && e.series === series);
 
 // ---------- state ----------
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-let ep = EPISODES.find(e => e.id === store.get("ep") && e.aired) || latestAired();
+// Always open on Celebrity Traitors series 2 episode 1.
+let ep = firstEp("celebrity", 2);
 let showCounts = store.get("counts", false);
 let current = null;    // { kind: 'search', q, sort, cursor, posts } | { kind: 'thread', uri }
 let history_ = [];     // stack of previous views for the Back button
@@ -271,12 +273,17 @@ function renderPicker() {
   const tabs = el("div", { class: "series" });
   for (const [key, name] of Object.entries(SHOWS)) {
     tabs.append(el("button", { type: "button", class: "tab", "aria-pressed": String(browse.show === key),
-      onclick: () => { const last = SERIES.filter(s => s.show === key).at(-1); browse = { show: key, series: (key === ep.show ? ep.series : last.n) }; renderPicker(); } }, name));
+      onclick: () => {
+        if (key === ep.show) return;
+        const last = SERIES.filter(s => s.show === key && firstEp(key, s.n).aired).at(-1);
+        selectEpisode(firstEp(key, last.n));
+      } }, name));
   }
   const seriesRow = el("div", { class: "series" });
   for (const s of SERIES.filter(s => s.show === browse.show)) {
     seriesRow.append(el("button", { type: "button", class: "tab small", "aria-pressed": String(browse.series === s.n),
-      onclick: () => { browse.series = s.n; renderPicker(); } }, `Series ${s.n}`, el("small", {}, ` ${s.year}`)));
+      disabled: !firstEp(s.show, s.n).aired,
+      onclick: () => { if (s.n !== ep.series) selectEpisode(firstEp(s.show, s.n)); } }, `Series ${s.n}`, el("small", {}, ` ${s.year}`)));
   }
   const eps = el("div", { class: "eps" });
   for (const e of EPISODES.filter(x => x.show === browse.show && x.series === browse.series)) {
@@ -292,7 +299,7 @@ function renderPicker() {
     `posts up to 23:59 ${fmtDay.format(last)} ${last.getUTCFullYear()}`);
 }
 function selectEpisode(e) {
-  ep = e; browse = { show: e.show, series: e.series }; store.set("ep", e.id); renderPicker();
+  ep = e; browse = { show: e.show, series: e.series }; renderPicker();
   history_ = [];
   if (current?.kind === "thread") openThread(current.uri, false);
   else runSearch(current?.q ?? $("#q").value, $("#sort").value);
