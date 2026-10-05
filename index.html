@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Round Table Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow reading column. A sticky "cloak" header holds the episode picker and search;
+   everything below is the feed, clamped to the chosen episode's night. */
+:root {
+  --bg: #eef0ea;          /* Highland mist */
+  --surface: #fbfbf8;
+  --ink: #1d231f;
+  --muted: #5d665f;
+  --line: #d3d8cf;
+  --moss: #2f4a3a;        /* castle tartan green */
+  --brass: #9a6b1f;       /* candle brass */
+  --blood: #8e2430;       /* shield / cutoff marker */
+  --chip: #e2e6dd;
+  --font-display: "IM Fell English", "Iowan Old Style", Georgia, serif;
+  --font-sc: "IM Fell English SC", "Iowan Old Style", Georgia, serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111613; --surface: #1a201c; --ink: #e7e9e2; --muted: #9aa49c; --line: #2c352f;
+    --moss: #8fb79d; --brass: #d9a54e; --blood: #e0717c; --chip: #242c27; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111613; --surface: #1a201c; --ink: #e7e9e2; --muted: #9aa49c; --line: #2c352f;
+  --moss: #8fb79d; --brass: #d9a54e; --blood: #e0717c; --chip: #242c27; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-body); }
+a { color: var(--moss); }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+.wrap { max-width: 720px; margin: 0 auto; padding-inline: 16px; }
+
+header.cloak {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.cloak .wrap { display: grid; gap: 10px; padding-block: 14px 12px; }
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font: 400 1.9rem/1 var(--font-display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h1 em { color: var(--brass); }
+.cutoff { font: 500 .78rem/1.3 var(--font-mono); color: var(--blood); text-align: right; }
+
+.series { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.series-label { font: 1rem var(--font-sc); color: var(--muted); letter-spacing: .04em; margin-right: 4px; }
+.eps { display: flex; gap: 6px; flex: 1 1 0; min-width: 0; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.ep {
+  flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 6px;
+  padding: 4px 9px; cursor: pointer; display: grid; line-height: 1.15; text-align: left;
+}
+.ep b { font: 500 .85rem var(--font-body); }
+.ep small { font: .68rem var(--font-mono); color: var(--muted); }
+.ep[aria-pressed="true"] { background: var(--moss); border-color: var(--moss); color: var(--bg); }
+.ep[aria-pressed="true"] small { color: inherit; opacity: .8; }
+.ep:disabled { opacity: .45; cursor: not-allowed; border-style: dashed; }
+
+form.search { display: flex; gap: 8px; flex-wrap: wrap; }
+form.search input[type=search] {
+  flex: 1 1 220px; min-width: 0; padding: 9px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface);
+}
+form.search select { padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); }
+.btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--moss); background: var(--moss); color: var(--bg); cursor: pointer; font-weight: 600; }
+.btn.ghost { background: transparent; color: var(--moss); }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: .82rem; }
+.quick button { border: 0; background: var(--chip); border-radius: 99px; padding: 3px 10px; cursor: pointer; }
+.quick label { margin-left: auto; color: var(--muted); display: flex; gap: 5px; align-items: center; cursor: pointer; }
+
+main .wrap { padding-block: 16px 60px; display: grid; gap: 12px; }
+.status { color: var(--muted); font-size: .9rem; }
+.status.err { color: var(--blood); }
+.crumb { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.crumb h2 { font: 400 1.35rem var(--font-display); margin: 0; overflow-wrap: anywhere; }
+
+.post {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 12px;
+}
+.post.focus { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass); }
+.post.reply { margin-left: 20px; }
+.post.reply.d2 { margin-left: 40px; }
+.post.reply.d3 { margin-left: 60px; }
+.av { width: 40px; height: 40px; border-radius: 50%; background: var(--chip); object-fit: cover; grid-row: span 3; }
+.meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; min-width: 0; }
+.meta .name { font-weight: 600; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.meta .name:hover { text-decoration: underline; }
+.meta .handle { color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.meta time { color: var(--muted); font: .74rem var(--font-mono); margin-left: auto; white-space: nowrap; }
+.live { font: 600 .66rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--blood); border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.text a, .text button.inl { color: var(--moss); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; }
+.foot { display: flex; gap: 14px; font: .76rem var(--font-mono); color: var(--muted); align-items: center; flex-wrap: wrap; }
+.foot button, .foot a { background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font: inherit; text-decoration: none; }
+.foot button:hover, .foot a:hover { color: var(--moss); }
+.imgs { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 4px; margin-top: 6px; }
+.imgs img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 6px; background: var(--chip); }
+.ext { display: grid; grid-template-columns: minmax(0,1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-top: 6px; text-decoration: none; color: inherit; }
+.ext img { width: 100%; max-height: 180px; object-fit: cover; }
+.ext div { padding: 8px 10px; font-size: .85rem; }
+.ext b { display: block; }
+.ext span { color: var(--muted); }
+.quote { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-top: 6px; font-size: .9rem; cursor: pointer; }
+.quote .meta { font-size: .85rem; }
+.hidden-note { font: .78rem var(--font-mono); color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
+.more { justify-self: center; }
+footer { color: var(--muted); font-size: .8rem; max-width: 65ch; }
+footer p { margin: 0 0 6px; }
+@media (max-width: 480px) {
+  h1 { font-size: 1.55rem; }
+  .cutoff { text-align: left; }
+  .post.reply, .post.reply.d2, .post.reply.d3 { margin-left: 10px; }
+}
+@media (min-width: 760px) { .eps { flex-wrap: wrap; overflow: visible; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<header class="cloak">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Round Table <em>Search</em></h1>
+      <div class="cutoff" id="cutoff"></div>
+    </div>
+    <div id="picker"></div>
+    <form class="search" id="form">
+      <input type="search" id="q" placeholder="Search Bluesky, e.g. celebritytraitors, or from:handle" autocomplete="off" aria-label="Search posts">
+      <select id="sort" aria-label="Sort order">
+        <option value="latest">Latest first</option>
+        <option value="top">Top</option>
+      </select>
+      <button class="btn" type="submit">Search</button>
+    </form>
+    <div class="quick" id="quick">
+      <button type="button" data-q="#celebritytraitors">#celebritytraitors</button>
+      <button type="button" data-q="celebrity traitors">celebrity traitors</button>
+      <button type="button" data-q="round table">round table</button>
+      <button type="button" data-q="faithful">faithful</button>
+      <button type="button" data-q="claudia winkleman">claudia</button>
+      <label><input type="checkbox" id="showCounts"> Show likes/reposts</label>
+    </div>
+  </div>
+</header>
+
+<main><div class="wrap" id="view"></div></main>
+
+<div class="wrap"><footer>
+  <p>Results come from Bluesky's public search with an <code>until</code> date. The page then drops any post Bluesky actually received after the cutoff, including backdated or imported posts, plus replies written later.</p>
+  <p>Some things can still leak. Like and repost counts, the "Top" ranking, and display names reflect today, not the night of the episode. Counts are hidden unless you switch them on.</p>
+</footer></div>
+
+<script>
+const API = "https://api.bsky.app/xrpc/";
+
+// Air dates (UK). Times are the BBC One slot: series 1 at 9pm, series 2 at 8pm.
+const SERIES = [
+  { n: 1, year: 2025, slot: "21:00", eps: [
+    ["2025-10-08", "1"], ["2025-10-09", "2"], ["2025-10-15", "3"], ["2025-10-16", "4"],
+    ["2025-10-22", "5"], ["2025-10-23", "6"], ["2025-10-29", "7"], ["2025-10-30", "8"],
+    ["2025-11-06", "Final"],
+  ]},
+  { n: 2, year: 2026, slot: "20:00", eps: [
+    ["2026-10-01", "1"], ["2026-10-02", "2"], ["2026-10-08", "3"], ["2026-10-09", "4"],
+  ]},
+];
+
+// ---------- time helpers (all in Europe/London) ----------
+function londonOffsetMin(utcDate) {
+  const s = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", timeZoneName: "shortOffset" })
+    .formatToParts(utcDate).find(p => p.type === "timeZoneName").value; // "GMT" or "GMT+1"
+  const m = s.match(/GMT([+-]\d+)?/);
+  return m && m[1] ? parseInt(m[1], 10) * 60 : 0;
+}
+// UTC instant of a London wall-clock time on a given date.
+function londonToUtc(dateStr, hhmm) {
+  const guess = new Date(`${dateStr}T${hhmm}:00Z`);
+  return new Date(guess.getTime() - londonOffsetMin(guess) * 60000);
+}
+function nextDay(dateStr) {
+  const d = new Date(dateStr + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+const fmtDay = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short" });
+const fmtLong = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const fmtStamp = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+// Build episode list with cutoffs and broadcast windows.
+const EPISODES = [];
+for (const s of SERIES) for (const [date, label] of s.eps) {
+  const airStart = londonToUtc(date, s.slot);
+  EPISODES.push({
+    id: `s${s.n}e${label}`, series: s.n, label, date,
+    cutoff: londonToUtc(nextDay(date), "00:00"),    // first instant NOT allowed
+    airStart, airEnd: new Date(airStart.getTime() + 65 * 60000),
+    aired: airStart.getTime() <= Date.now(),
+  });
+}
+
+// ---------- state ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+let ep = EPISODES.find(e => e.id === store.get("ep")) || EPISODES[0];
+if (!ep.aired) ep = EPISODES[0];
+let showCounts = store.get("counts", false);
+let current = null;    // { kind: 'search', q, sort, cursor, posts } | { kind: 'thread', uri }
+let history_ = [];     // stack of previous views for the Back button
+
+const $ = s => document.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null) n.append(k.nodeType ? k : document.createTextNode(k));
+  return n;
+};
+
+const allowed = p => {
+  const c = ep.cutoff.getTime();
+  const t1 = Date.parse(p.indexedAt), t2 = Date.parse(p.record?.createdAt ?? p.value?.createdAt);
+  return (isNaN(t1) || t1 < c) && (isNaN(t2) || t2 < c);
+};
+
+// ---------- picker ----------
+function renderPicker() {
+  const box = $("#picker"); box.replaceChildren();
+  for (const s of SERIES) {
+    const row = el("div", { class: "series" }, el("span", { class: "series-label" }, `Series ${s.n}`));
+    const eps = el("div", { class: "eps" });
+    for (const e of EPISODES.filter(x => x.series === s.n)) {
+      eps.append(el("button", {
+        type: "button", class: "ep", "aria-pressed": String(e === ep), disabled: !e.aired,
+        title: e.aired ? `Episode ${e.label}, ${fmtLong.format(e.airStart)}` : "Not aired yet",
+        onclick: () => selectEpisode(e),
+      }, el("b", {}, e.label === "Final" ? "Final" : `Ep ${e.label}`), el("small", {}, fmtDay.format(e.airStart))));
+    }
+    row.append(eps); box.append(row);
+  }
+  const last = new Date(ep.cutoff.getTime() - 1);
+  $("#cutoff").innerHTML = "";
+  $("#cutoff").append(`Series ${ep.series} ${ep.label === "Final" ? "Final" : "Ep " + ep.label}`, el("br"),
+    `posts up to 23:59 ${fmtDay.format(last)} ${last.getUTCFullYear()}`);
+}
+function selectEpisode(e) {
+  ep = e; store.set("ep", e.id); renderPicker();
+  history_ = [];
+  if (current?.kind === "thread") openThread(current.uri, false);
+  else runSearch(current?.q ?? $("#q").value, $("#sort").value);
+}
+
+// ---------- rich text ----------
+function richText(text, facets) {
+  const out = el("div", { class: "text" });
+  if (!text) return out;
+  const bytes = new TextEncoder().encode(text), dec = new TextDecoder();
+  const fs = (facets || []).filter(f => f.index && f.features?.length).sort((a, b) => a.index.byteStart - b.index.byteStart);
+  let pos = 0;
+  for (const f of fs) {
+    const { byteStart: s, byteEnd: e } = f.index;
+    if (s < pos || e > bytes.length) continue;
+    out.append(dec.decode(bytes.slice(pos, s)));
+    const label = dec.decode(bytes.slice(s, e)), feat = f.features[0], t = feat.$type;
+    if (t === "app.bsky.richtext.facet#link") out.append(el("a", { href: feat.uri, target: "_blank", rel: "noopener" }, label));
+    else if (t === "app.bsky.richtext.facet#mention") out.append(el("button", { class: "inl", type: "button", onclick: () => go(`from:${label.replace(/^@/, "")}`) }, label));
+    else if (t === "app.bsky.richtext.facet#tag") out.append(el("button", { class: "inl", type: "button", onclick: () => go(`#${feat.tag}`) }, label));
+    else out.append(label);
+    pos = e;
+  }
+  out.append(dec.decode(bytes.slice(pos)));
+  return out;
+}
+
+// ---------- post rendering ----------
+function postUrl(p) {
+  const rkey = p.uri.split("/").pop();
+  return `https://bsky.app/profile/${p.author.handle}/post/${rkey}`;
+}
+function embedView(embed) {
+  if (!embed) return null;
+  const t = embed.$type || "";
+  if (t.startsWith("app.bsky.embed.images")) {
+    return el("div", { class: "imgs" }, embed.images.map(i => el("a", { href: i.fullsize, target: "_blank", rel: "noopener" }, el("img", { src: i.thumb, alt: i.alt || "", loading: "lazy" }))));
+  }
+  if (t.startsWith("app.bsky.embed.video")) {
+    return embed.thumbnail ? el("div", { class: "imgs" }, el("img", { src: embed.thumbnail, alt: embed.alt || "Video", loading: "lazy" })) : null;
+  }
+  if (t.startsWith("app.bsky.embed.external")) {
+    const x = embed.external;
+    return el("a", { class: "ext", href: x.uri, target: "_blank", rel: "noopener" },
+      x.thumb ? el("img", { src: x.thumb, alt: "", loading: "lazy" }) : null,
+      el("div", {}, el("b", {}, x.title || x.uri), el("span", {}, (x.description || "").slice(0, 160))));
+  }
+  if (t.startsWith("app.bsky.embed.recordWithMedia")) {
+    return el("div", {}, embedView(embed.media), embedView(embed.record));
+  }
+  if (t.startsWith("app.bsky.embed.record")) {
+    const r = embed.record;
+    if (!r || r.$type !== "app.bsky.embed.record#viewRecord") return null;
+    if (!allowed(r)) return el("div", { class: "hidden-note" }, "Quoted post hidden: it was posted after this episode.");
+    return el("div", { class: "quote", onclick: () => openThread(r.uri) },
+      el("div", { class: "meta" }, el("span", { class: "name" }, r.author.displayName || r.author.handle), el("span", { class: "handle" }, "@" + r.author.handle)),
+      richText(r.value?.text, r.value?.facets));
+  }
+  return null;
+}
+function postCard(p, opts = {}) {
+  const t = new Date(p.record?.createdAt || p.indexedAt);
+  const live = EPISODES.find(e => t >= e.airStart && t <= e.airEnd);
+  const card = el("article", { class: "post" + (opts.focus ? " focus" : "") + (opts.depth ? ` reply d${Math.min(opts.depth, 3)}` : "") },
+    el("img", { class: "av", src: p.author.avatar || "data:,", alt: "", loading: "lazy" }),
+    el("div", { class: "meta" },
+      el("button", { class: "name", type: "button", onclick: () => go(`from:${p.author.handle}`) }, p.author.displayName || p.author.handle),
+      el("span", { class: "handle" }, "@" + p.author.handle),
+      live ? el("span", { class: "live", title: `Posted while Series ${live.series} Ep ${live.label} was on air` }, `live · S${live.series}E${live.label === "Final" ? "F" : live.label}`) : null,
+      el("time", { datetime: t.toISOString() }, fmtStamp.format(t))),
+    el("div", {}, richText(p.record?.text, p.record?.facets), embedView(p.embed)),
+    el("div", { class: "foot" },
+      p.replyCount !== undefined ? el("button", { type: "button", onclick: () => openThread(p.uri) }, "Open thread" + (showCounts ? ` · ${p.replyCount} replies` : "")) : null,
+      showCounts ? el("span", {}, `${p.repostCount ?? 0} reposts · ${p.likeCount ?? 0} likes`) : null,
+      el("a", { href: postUrl(p), target: "_blank", rel: "noopener" }, "bsky.app ↗")));
+  return card;
+}
+
+// ---------- views ----------
+function setStatus(text, err) {
+  let s = $("#status");
+  if (!s) { s = el("div", { id: "status", class: "status" }); $("#view").append(s); }
+  s.className = "status" + (err ? " err" : ""); s.textContent = text; s.hidden = !text;
+}
+async function xrpc(method, params) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) for (const x of [].concat(v)) sp.append(k, x);
+  const url = API + method + "?" + sp;
+  const r = await fetch(url);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.message || `Bluesky returned ${r.status}`);
+  return body;
+}
+// Bluesky rejects a dated search whose text is only operators (#tag, from:x), so split them
+// into the tag/author parameters and keep plain words as the text query.
+function parseQuery(q) {
+  const tags = [], words = []; let author = null;
+  for (const tok of q.trim().split(/\s+/)) {
+    let m;
+    if ((m = tok.match(/^#([\p{L}\p{N}_]+)$/u))) tags.push(m[1].toLowerCase());
+    else if ((m = tok.match(/^from:@?(\S+)$/i))) author = m[1];
+    else if (tok) words.push(tok);
+  }
+  const text = words.length ? words.join(" ") : tags.join(" ");
+  return { tags, author, text };
+}
+
+function go(q) {
+  if (current) history_.push(current);
+  $("#q").value = q;
+  runSearch(q, $("#sort").value);
+}
+
+async function runSearch(q, sort, append = false) {
+  q = (q || "").trim();
+  const view = $("#view");
+  if (!append) {
+    current = { kind: "search", q, sort, cursor: null, shown: 0, filtered: 0 };
+    view.replaceChildren(crumb(q ? `“${q}”` : "Pick a search"));
+    window.scrollTo({ top: 0 });
+  }
+  if (!q) { setStatus("Type a search above, or tap one of the suggestions."); return; }
+  const me = current;
+  view.querySelector(".more")?.remove();
+  setStatus("Searching…");
+  try {
+    let added = 0, tries = 0;
+    // Keep paging while the cutoff filter is eating whole pages.
+    do {
+      const pq = parseQuery(q);
+      let res, posts;
+      if (!pq.text && pq.author) {
+        // Profile only: walk the author's feed backwards from the cutoff.
+        res = await xrpc("app.bsky.feed.getAuthorFeed", { actor: pq.author, limit: 50, cursor: me.cursor || ep.cutoff.toISOString() });
+        posts = (res.feed || []).map(f => f.post);
+      } else {
+        const params = { q: pq.text, sort, limit: 50, until: ep.cutoff.toISOString() };
+        if (pq.tags.length) params.tag = pq.tags;
+        if (pq.author) params.author = pq.author;
+        if (me.cursor) params.cursor = me.cursor;
+        res = await xrpc("app.bsky.feed.searchPosts", params);
+        posts = res.posts || [];
+      }
+      if (me !== current) return;
+      me.cursor = res.cursor || null;
+      const seen = me.seen || (me.seen = new Set());
+      for (const p of posts) {
+        if (seen.has(p.uri)) continue; seen.add(p.uri);
+        if (!allowed(p)) { me.filtered++; continue; }
+        setStatus(""); $("#status").before(postCard(p)); added++; me.shown++;
+      }
+      tries++;
+    } while (added < 10 && me.cursor && tries < 5);
+    const note = me.filtered ? ` ${me.filtered} later post${me.filtered === 1 ? "" : "s"} held back.` : "";
+    if (!me.shown) setStatus(`Nothing found on or before ${fmtLong.format(new Date(ep.cutoff - 1))}.${note}`);
+    else setStatus(`${me.shown} post${me.shown === 1 ? "" : "s"} shown.${note}`);
+    if (me.cursor) view.append(el("button", { class: "btn ghost more", type: "button", onclick: () => runSearch(me.q, me.sort, true) }, "Load more"));
+  } catch (e) {
+    if (me === current) setStatus(`Search failed: ${e.message}. Try a different wording or search again in a moment.`, true);
+  }
+}
+
+function crumb(title) {
+  return el("div", { class: "crumb" },
+    history_.length ? el("button", { class: "btn ghost", type: "button", onclick: back }, "← Back") : null,
+    el("h2", {}, title));
+}
+function back() {
+  const prev = history_.pop(); if (!prev) return;
+  if (prev.kind === "thread") openThread(prev.uri, false);
+  else { $("#q").value = prev.q; $("#sort").value = prev.sort; runSearch(prev.q, prev.sort); }
+}
+
+async function openThread(uri, push = true) {
+  if (push && current) history_.push(current);
+  current = { kind: "thread", uri };
+  const me = current, view = $("#view");
+  view.replaceChildren(crumb("Thread"));
+  window.scrollTo({ top: 0 });
+  setStatus("Loading thread…");
+  try {
+    const res = await xrpc("app.bsky.feed.getPostThread", { uri, depth: 6, parentHeight: 20 });
+    if (me !== current) return;
+    const t = res.thread;
+    if (!t?.post) { setStatus("This post is no longer available.", true); return; }
+    if (!allowed(t.post)) { setStatus("This post was written after the chosen episode, so it stays hidden.", true); return; }
+    const parents = [];
+    for (let p = t.parent; p?.post; p = p.parent) parents.unshift(p.post);
+    let hidden = 0;
+    const frag = [];
+    parents.forEach(p => frag.push(postCard(p)));
+    frag.push(postCard(t.post, { focus: true }));
+    const walk = (node, depth) => {
+      for (const r of (node.replies || []).filter(r => r.post).sort((a, b) => Date.parse(a.post.indexedAt) - Date.parse(b.post.indexedAt))) {
+        if (!allowed(r.post)) { hidden++; continue; }
+        frag.push(postCard(r.post, { depth })); walk(r, depth + 1);
+      }
+    };
+    walk(t, 1);
+    setStatus("");
+    $("#status").before(...frag);
+    setStatus(hidden ? `${hidden} later repl${hidden === 1 ? "y" : "ies"} hidden.` : "");
+  } catch (e) {
+    if (me === current) setStatus(`Couldn't load the thread: ${e.message}`, true);
+  }
+}
+
+// ---------- wiring ----------
+$("#form").addEventListener("submit", ev => { ev.preventDefault(); history_ = current ? [...history_, current] : history_; runSearch($("#q").value, $("#sort").value); store.set("q", $("#q").value); });
+$("#sort").addEventListener("change", () => { store.set("sort", $("#sort").value); if (current?.kind === "search") runSearch(current.q, $("#sort").value); });
+$("#quick").addEventListener("click", ev => { const q = ev.target.dataset?.q; if (q) go(q); });
+const cc = $("#showCounts"); cc.checked = showCounts;
+cc.addEventListener("change", () => { showCounts = cc.checked; store.set("counts", showCounts); if (current?.kind === "thread") openThread(current.uri, false); else if (current) runSearch(current.q, current.sort); });
+
+$("#sort").value = store.get("sort", "latest");
+$("#q").value = store.get("q", "#celebritytraitors");
+renderPicker();
+runSearch($("#q").value, $("#sort").value);
+</script>
+</body>
+</html>
